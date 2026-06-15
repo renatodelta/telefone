@@ -11,6 +11,15 @@
     <header>
         <h1>Sistema VoIP Interativo</h1>
         <p>Telefone A liga para o Telefone B em tempo real (Estilo WhatsApp)</p>
+        
+        <div class="mode-selector-wrapper">
+            <label for="view-mode-select">Modo de Visualização: </label>
+            <select id="view-mode-select" onchange="changeViewMode(this.value)">
+                <option value="dual">Painel Duplo (Demonstração Local)</option>
+                <option value="phone-a">Apenas Telefone A (Remoto / Celular A)</option>
+                <option value="phone-b">Apenas Telefone B (Remoto / Celular B)</option>
+            </select>
+        </div>
     </header>
 
     <div class="workspace">
