@@ -349,6 +349,16 @@ async function startCallInitiation(caller) {
             setupDataConnectionListeners(caller);
         });
 
+        // Request microphone permission on user gesture (dial click) if not yet granted
+        if (!localStream) {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                console.log("Microphone stream acquired during dial.");
+            } catch (e) {
+                console.warn("Microphone access denied during dial, using silent fallback.");
+            }
+        }
+
         // Establish WebRTC Audio Stream connection
         const mediaStream = localStream || getSilentAudioStream();
         mediaConn = peerInstance.call(`${PEER_PREFIX}${destId}`, mediaStream);
@@ -411,6 +421,16 @@ async function acceptCall(phone) {
         // Notify caller that we accepted the call
         if (dataConn) {
             dataConn.send({ type: 'call_accept' });
+        }
+
+        // Request microphone permission on user gesture (accept click) if not yet granted
+        if (!localStream) {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                console.log("Microphone stream acquired during accept.");
+            } catch (e) {
+                console.warn("Microphone access denied during accept, using silent fallback.");
+            }
         }
 
         // Answer WebRTC audio channel
