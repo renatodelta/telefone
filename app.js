@@ -79,9 +79,8 @@ window.addEventListener('DOMContentLoaded', async () => {
         console.warn("Microphone access not granted, using synthesizer simulation mode.");
     }
     
-    // Reset signaling database on init to prevent stale loops
-    await fetch('signal.php?action=reset&phone=a').catch(e => {});
-    await fetch('signal.php?action=reset&phone=b').catch(e => {});
+    // No global resets on load to avoid wiping active peer states
+
     
     // Start default signaling/view config
     changeViewMode('dual');
@@ -160,7 +159,9 @@ function changeViewMode(mode) {
     
     // If in standalone mode, start polling signaling server for events
     if (mode === 'phone-a' || mode === 'phone-b') {
+        const role = mode === 'phone-a' ? 'a' : 'b';
         console.log(`Iniciando monitoramento de sinalização remota como: ${mode}`);
+        resetSignaling(role); // Reset only our own phone state on startup to clear previous hangs
         remotePollInterval = setInterval(pollSignalingServer, 1000);
     }
 }
