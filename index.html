@@ -333,6 +333,9 @@
         <button class="btn-mic-init" onclick="requestMicrophonePermission()">Permitir Microfone</button>
     </div>
 
+    <!-- Permanent audio tag to play incoming stream (prevents garbage collection) -->
+    <audio id="remote-audio-player" autoplay playsinline style="display: none;"></audio>
+
     <!-- Load Scripts -->
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
     <script src="audio.js"></script>

@@ -355,10 +355,11 @@ async function startCallInitiation(caller) {
 
         mediaConn.on('stream', (remoteStream) => {
             console.log("Mídia de áudio estabelecida com sucesso.");
-            // Play incoming stream on a virtual audio tag if needed
-            const audioEl = document.createElement('audio');
-            audioEl.srcObject = remoteStream;
-            audioEl.play().catch(e=>{});
+            const audioPlayer = document.getElementById('remote-audio-player');
+            if (audioPlayer) {
+                audioPlayer.srcObject = remoteStream;
+                audioPlayer.play().catch(e => console.error("Error playing caller stream:", e));
+            }
         });
     }
 }
@@ -419,9 +420,11 @@ async function acceptCall(phone) {
             
             mediaConn.on('stream', (remoteStream) => {
                 console.log("Recebendo voz remota...");
-                const audioEl = document.createElement('audio');
-                audioEl.srcObject = remoteStream;
-                audioEl.play().catch(e=>{});
+                const audioPlayer = document.getElementById('remote-audio-player');
+                if (audioPlayer) {
+                    audioPlayer.srcObject = remoteStream;
+                    audioPlayer.play().catch(e => console.error("Error playing receiver stream:", e));
+                }
             });
         }
 
