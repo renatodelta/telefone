@@ -133,9 +133,7 @@ function getSilentAudioStream() {
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
         const ctx = new AudioContextClass();
         const dst = ctx.createMediaStreamDestination();
-        const osc = ctx.createOscillator();
-        osc.connect(dst);
-        osc.start();
+        // Do NOT connect any oscillator so it is completely silent
         return dst.stream;
     } catch(e) {
         console.warn("Failed to create silent context stream, using empty MediaStream.");
