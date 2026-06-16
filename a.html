@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telefone A - VoIP</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #0b0f19;
+            padding: 1rem;
+        }
+        .phone-container {
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Back to Portal Link -->
+    <a href="index.html" style="color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 8px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+        Voltar para a Central
+    </a>
+
+    <!-- TELEFONE A -->
+    <div class="phone-container">
+        <div id="phone-a" class="phone-device">
+            <!-- Top Notch / Island -->
+            <div class="phone-notch">
+                <div class="notch-speaker"></div>
+                <div class="notch-camera"></div>
+            </div>
+
+            <!-- Status Bar -->
+            <div class="phone-status-bar">
+                <span class="status-time">20:43</span>
+                <div class="status-right">
+                    <svg class="status-bar-icon" viewBox="0 0 24 24"><path d="M2 22h20V2z"/></svg>
+                    <svg class="status-bar-icon" viewBox="0 0 24 24"><path d="M12 21l-12-18c0 0 8-5 12-5s12 5 12 5z"/></svg>
+                    <svg class="status-bar-icon" viewBox="0 0 24 24"><path d="M17 5H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2m2 3h2v8h-2z"/></svg>
+                </div>
+            </div>
+
+            <!-- Phone Screen Content -->
+            <div class="phone-screen">
+                <!-- 1. Dialer View -->
+                <div id="phone-a-dialer" class="view active">
+                    <div class="phone-header">
+                        <h2>Discador</h2>
+                        <span class="phone-id-badge">Fone A: 555-0101</span>
+                    </div>
+                    <div id="phone-a-display" class="dialer-screen"></div>
+                    <div class="keypad-grid">
+                        <button class="key-btn" onclick="pressKey('a', '1')">1<span class="key-sub">o_o</span></button>
+                        <button class="key-btn" onclick="pressKey('a', '2')">2<span class="key-sub">abc</span></button>
+                        <button class="key-btn" onclick="pressKey('a', '3')">3<span class="key-sub">def</span></button>
+                        <button class="key-btn" onclick="pressKey('a', '4')">4<span class="key-sub">ghi</span></button>
+                        <button class="key-btn" onclick="pressKey('a', '5')">5<span class="key-sub">jkl</span></button>
+                        <button class="key-btn" onclick="pressKey('a', '6')">6<span class="key-sub">mno</span></button>
+                        <button class="key-btn" onclick="pressKey('a', '7')">7<span class="key-sub">pqrs</span></button>
+                        <button class="key-btn" onclick="pressKey('a', '8')">8<span class="key-sub">tuv</span></button>
+                        <button class="key-btn" onclick="pressKey('a', '9')">9<span class="key-sub">wxyz</span></button>
+                        <button class="key-btn" onclick="pressKey('a', '*')">*<span class="key-sub"></span></button>
+                        <button class="key-btn" onclick="pressKey('a', '0')">0<span class="key-sub">+</span></button>
+                        <button class="key-btn" onclick="pressKey('a', '#')">#<span class="key-sub"></span></button>
+                    </div>
+                    <div class="call-action-row">
+                        <div style="width: 44px;"></div>
+                        <button class="btn-call" onclick="startCallInitiation('a')">
+                            <svg viewBox="0 0 24 24"><path d="M6.62 10.79a15.15 15.15 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.11-.27 11.5 11.5 0 0 0 3.58.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11.5 11.5 0 0 0 .57 3.58 1 1 0 0 1-.27 1.11z"/></svg>
+                        </button>
+                        <button class="btn-delete" onclick="deleteDigit('a')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zM18 9l-6 6M12 9l6 6"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 2. Contacts View -->
+                <div id="phone-a-contacts" class="view">
+                    <div class="phone-header">
+                        <h2>Contatos</h2>
+                    </div>
+                    <div class="contact-list">
+                        <div class="contact-card">
+                            <div class="contact-info">
+                                <div class="contact-avatar" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)">B</div>
+                                <div class="contact-details">
+                                    <h4>Telefone B</h4>
+                                    <p>555-0102</p>
+                                </div>
+                            </div>
+                            <button class="contact-call-btn" onclick="dialFromContact('a', '555-0102')">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-2.2 2.2a15.045 15.045 0 0 1-6.59-6.59l2.2-2.21a.96.96 0 0 0 .25-1A11.36 11.36 0 0 1 8.5 4c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.5c0-.55-.45-1-1-1z"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Logs View -->
+                <div id="phone-a-logs" class="view">
+                    <div class="phone-header">
+                        <h2>Recentes</h2>
+                    </div>
+                    <div id="phone-a-log-list" class="log-list"></div>
+                </div>
+
+                <!-- Tab Buttons -->
+                <div class="app-tabs">
+                    <button class="tab-btn active" onclick="switchTab('a', 'dialer')">
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 16h-2v-2h2v2zm0-4h-2V7h2v7z"/></svg>
+                        Teclado
+                    </button>
+                    <button class="tab-btn" onclick="switchTab('a', 'contacts')">
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                        Contatos
+                    </button>
+                    <button class="tab-btn" onclick="switchTab('a', 'logs')">
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.25 2.52.77-1.28-3.52-2.09V8z"/></svg>
+                        Recentes
+                    </button>
+                </div>
+
+                <!-- Call Screen Overlay -->
+                <div id="phone-a-call-screen" class="call-overlay">
+                    <div class="call-top-info">
+                        <div id="phone-a-call-status" class="call-status-label">Chamando...</div>
+                        <div id="phone-a-call-name" class="call-peer-name">Telefone B</div>
+                        <div id="phone-a-call-number" class="call-peer-number">555-0102</div>
+                    </div>
+
+                    <div class="call-avatar-container">
+                        <div id="phone-a-pulse-1" class="call-avatar-pulse"></div>
+                        <div id="phone-a-pulse-2" class="call-avatar-pulse-2"></div>
+                        <div class="call-avatar">B</div>
+                    </div>
+
+                    <!-- Audio Visualizer -->
+                    <div class="visualizer-container">
+                        <canvas id="phone-a-visualizer" class="visualizer-canvas"></canvas>
+                    </div>
+
+                    <div class="call-controls-panel">
+                        <div class="call-features-row">
+                            <button id="phone-a-btn-mute" class="feature-btn" onclick="toggleMute('a')">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg>
+                            </button>
+                            <button id="phone-a-btn-speaker" class="feature-btn" onclick="toggleSpeaker('a')">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                            </button>
+                        </div>
+
+                        <div class="action-buttons-row">
+                            <button id="phone-a-btn-decline" class="action-btn btn-decline" onclick="hangupCall('a')">
+                                <svg viewBox="0 0 24 24"><path d="M12 9c-2.2 0-4.3.4-6.2 1.1-.5.2-.9.7-.9 1.3v3.2c0 .5.3.9.7 1.1l2.2.8c.3.1.7 0 .9-.3l1.8-1.8c.2-.2.3-.5.3-.8v-3.5c1.3-.3 2.7-.3 4 0v3.5c0 .3.1.6.3.8l1.8 1.8c.3.3.6.4 1 .2l2.2-.8c.4-.2.6-.6.6-1.1v-3.2c0-.6-.4-1.1-1-1.3-1.9-.7-4-1.1-6.2-1.1z"/></svg>
+                            </button>
+                            <button id="phone-a-btn-accept" class="action-btn btn-accept" onclick="acceptCall('a')">
+                                <svg viewBox="0 0 24 24"><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-2.2 2.2a15.045 15.045 0 0 1-6.59-6.59l2.2-2.21a.96.96 0 0 0 .25-1a11.36 11.36 0 0 1 8.5 4c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.5c0-.55-.45-1-1-1z"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="home-indicator-bar"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Playout player -->
+    <audio id="remote-audio-player" autoplay playsinline style="display: none;"></audio>
+
+    <!-- Load Scripts -->
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <script src="audio.js"></script>
+    <script src="app_a.js"></script>
+</body>
+</html>
