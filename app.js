@@ -1,4 +1,4 @@
-// Core App Logic for VOIP Phone System Simulation (Local + Remote WebRTC modes)
+// Core App Logic for VOIP Phone System Simulation (PeerJS Serverless WebRTC)
 
 // Instantiating Tones Synthesizers
 const audioA = new PhoneAudioEngine();
@@ -32,27 +32,15 @@ const state = {
     }
 };
 
-// Mode configuration: 'dual' (local side-by-side) or 'phone-a' / 'phone-b' (remote standalone)
-let currentViewMode = 'dual';
-let remotePollInterval = null;
-let sentCandidatesCount = 0;
-let receivedCandidatesCount = 0;
-
-// WebRTC Peer Connections
-let localPeerConnection = null; // Used for standalone mode or peer A in local mode
-let localPeerConnectionB = null; // Used for peer B in local mode
+// PeerJS Configuration
+let currentViewMode = 'dual'; // 'dual', 'phone-a', 'phone-b'
+let peerInstance = null;      // PeerJS instance
+let dataConn = null;          // PeerJS DataConnection
+let mediaConn = null;         // PeerJS MediaConnection
 let localStream = null;
 
-// Public STUN servers to bypass NAT (4G to Wi-Fi connection)
-const iceConfiguration = {
-    iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' }
-    ]
-};
+// Unique namespace to prevent ID collisions on the public PeerJS server
+const PEER_PREFIX = 'renatodelta-tele-';
 
 // DTMF Keypad Tones Mapping
 const toneFreqs = {
@@ -71,18 +59,15 @@ window.addEventListener('DOMContentLoaded', async () => {
     renderLogs('a');
     renderLogs('b');
     
-    // Auto-request microphone permission to prepare WebRTC stream
+    // Request microphone permission on startup to prepare stream
     try {
         localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         console.log("Microphone stream acquired.");
     } catch (e) {
-        console.warn("Microphone access not granted, using synthesizer simulation mode.");
+        console.warn("Microphone access not granted or blocked by browser context. Using synthesizer backup.");
     }
     
-    // No global resets on load to avoid wiping active peer states
-
-    
-    // Start default signaling/view config
+    // Default mode is dual panel local simulation
     changeViewMode('dual');
 });
 
@@ -142,27 +127,19 @@ function dialFromContact(phone, targetNumber) {
     startCallInitiation(phone);
 }
 
-// Switch View Modes: Dual Panel vs Remote Phone A/B Standalone
-function changeViewMode(mode) {
-    currentViewMode = mode;
-    document.body.className = '';
-    
-    if (mode !== 'dual') {
-        document.body.classList.add('view-mode-' + mode);
-    }
-    
-    // Stop any existing signaling polling
-    if (remotePollInterval) {
-        clearInterval(remotePollInterval);
-        remotePollInterval = null;
-    }
-    
-    // If in standalone mode, start polling signaling server for events
-    if (mode === 'phone-a' || mode === 'phone-b') {
-        const role = mode === 'phone-a' ? 'a' : 'b';
-        console.log(`Iniciando monitoramento de sinalização remota como: ${mode}`);
-        resetSignaling(role); // Reset only our own phone state on startup to clear previous hangs
-        remotePollInterval = setInterval(pollSignalingServer, 1000);
+// Generate a silent Audio MediaStream if microphone is blocked (HTTP fallback)
+function getSilentAudioStream() {
+    try {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AudioContextClass();
+        const dst = ctx.createMediaStreamDestination();
+        const osc = ctx.createOscillator();
+        osc.connect(dst);
+        osc.start();
+        return dst.stream;
+    } catch(e) {
+        console.warn("Failed to create silent context stream, using empty MediaStream.");
+        return new MediaStream();
     }
 }
 
@@ -170,153 +147,128 @@ function changeViewMode(mode) {
 async function requestMicrophonePermission() {
     try {
         localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        alert('Acesso ao microfone concedido! Ligações usarão voz real.');
+        alert('Acesso ao microfone concedido! Agora as ligações usarão voz real.');
     } catch(err) {
         alert('Permissão de microfone negada. O sistema usará simulação de áudio sintetizado.');
     }
 }
 
-// --- PHP Signaling Server Sync Helpers ---
+// --- PeerJS Signaling Setup ---
 
-async function sendStateToCloud(phone, localPhoneState) {
-    const payload = {
-        status: localPhoneState.status,
-        peer: localPhoneState.activePeer,
-        sdp: localPhoneState.sdp
-    };
+function changeViewMode(mode) {
+    currentViewMode = mode;
+    document.body.className = '';
     
-    await fetch(`signal.php?action=send&phone=${phone}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    }).catch(err => console.error("Error sending state:", err));
-}
+    // Reset any active PeerJS connections
+    if (peerInstance) {
+        peerInstance.destroy();
+        peerInstance = null;
+    }
+    dataConn = null;
+    mediaConn = null;
 
-async function sendCandidateToCloud(phone, candidate) {
-    await fetch(`signal.php?action=send&phone=${phone}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ candidate })
-    }).catch(err => console.error("Error sending candidate:", err));
-}
+    if (mode !== 'dual') {
+        document.body.classList.add('view-mode-' + mode);
+        
+        // Initialize PeerJS for the selected standalone phone
+        const myId = mode === 'phone-a' ? '5550101' : '5550102';
+        const role = mode === 'phone-a' ? 'a' : 'b';
+        
+        console.log(`Inicializando PeerJS como: ${PEER_PREFIX}${myId}`);
+        
+        peerInstance = new Peer(`${PEER_PREFIX}${myId}`, {
+            debug: 1
+        });
 
-async function getRemoteState(peerPhone) {
-    try {
-        const res = await fetch(`signal.php?action=get&phone=${peerPhone}`);
-        return await res.json();
-    } catch (e) {
-        return null;
+        // Listen for incoming Data channel control signals
+        peerInstance.on('connection', (conn) => {
+            dataConn = conn;
+            setupDataConnectionListeners(role);
+        });
+
+        // Listen for incoming WebRTC Audio call streams
+        peerInstance.on('call', (call) => {
+            mediaConn = call;
+            console.log("Recebendo chamada de mídia...");
+            
+            // Auto accept incoming voice track once user accepts call
+            // Handled inside acceptCall()
+        });
+
+        peerInstance.on('error', (err) => {
+            console.error("Erro no PeerJS:", err);
+            if (err.type === 'peer-unavailable') {
+                alert("O telefone de destino não está online. Certifique-se de que ele está aberto no outro celular.");
+                hangupCall(role);
+            }
+        });
     }
 }
 
-async function clearRemoteCandidates(phone) {
-    await fetch(`signal.php?action=clear_candidates&phone=${phone}`).catch(e => {});
-}
+// Setup data channel callbacks to handle remote events
+function setupDataConnectionListeners(localRole) {
+    const peerRole = localRole === 'a' ? 'b' : 'a';
+    const localPhoneState = state[localRole];
 
-async function resetSignaling(phone) {
-    await fetch(`signal.php?action=reset&phone=${phone}`).catch(e => {});
-}
-
-// --- Signaling Polling loop for Remote Call routing ---
-
-async function pollSignalingServer() {
-    const role = currentViewMode === 'phone-a' ? 'a' : 'b';
-    const peerRole = role === 'a' ? 'b' : 'a';
-    
-    const localPhoneState = state[role];
-    
-    // 1. Fetch current remote peer's published state
-    const remoteData = await getRemoteState(peerRole);
-    if (!remoteData) return;
-    
-    // A. IDLE state: Check if peer is calling us
-    if (localPhoneState.status === 'idle') {
-        if (remoteData.status === 'outgoing' && remoteData.peer === role) {
-            console.log(`Recebendo chamada remota do Telefone ${peerRole.toUpperCase()}`);
-            
+    dataConn.on('data', (data) => {
+        console.log("Sinal recebido:", data);
+        
+        if (data.type === 'call_init') {
             localPhoneState.status = 'incoming';
             localPhoneState.activePeer = peerRole;
             
-            // Show incoming call overlay screen
-            const callScreen = document.getElementById(`phone-${role}-call-screen`);
-            document.getElementById(`phone-${role}-call-status`).textContent = 'Ligação de Voz VoIP';
-            document.getElementById(`phone-${role}-call-name`).textContent = peerRole === 'a' ? 'Telefone A' : 'Telefone B';
-            document.getElementById(`phone-${role}-call-number`).textContent = peerRole === 'a' ? '555-0101' : '555-0102';
+            // Show Ringing Overlay screen
+            const callScreen = document.getElementById(`phone-${localRole}-call-screen`);
+            document.getElementById(`phone-${localRole}-call-status`).textContent = 'Ligação de Voz VoIP';
+            document.getElementById(`phone-${localRole}-call-name`).textContent = peerRole === 'a' ? 'Telefone A' : 'Telefone B';
+            document.getElementById(`phone-${localRole}-call-number`).textContent = peerRole === 'a' ? '555-0101' : '555-0102';
             
-            document.getElementById(`phone-${role}-btn-accept`).style.display = 'flex';
-            document.getElementById(`phone-${role}-pulse-1`).style.display = 'block';
-            document.getElementById(`phone-${role}-pulse-2`).style.display = 'block';
+            document.getElementById(`phone-${localRole}-btn-accept`).style.display = 'flex';
+            document.getElementById(`phone-${localRole}-pulse-1`).style.display = 'block';
+            document.getElementById(`phone-${localRole}-pulse-2`).style.display = 'block';
             callScreen.classList.add('active');
             
-            // Trigger vibration & ringtone
-            document.getElementById(`phone-${role}`).classList.add('vibrate-active');
-            const audio = role === 'a' ? audioA : audioB;
+            // Ring and vibrate
+            document.getElementById(`phone-${localRole}`).classList.add('vibrate-active');
+            const audio = localRole === 'a' ? audioA : audioB;
             audio.startRingtone();
-        }
-    }
-    
-    // B. OUTGOING state: Check if peer answered our call
-    else if (localPhoneState.status === 'outgoing') {
-        // If peer answered
-        if (remoteData.status === 'connected' && remoteData.sdp) {
-            console.log("Chamada aceita remotamente. Conectando WebRTC...");
+        } 
+        
+        else if (data.type === 'call_accept') {
+            console.log("Chamada aceita!");
             localPhoneState.status = 'connected';
             
-            const audio = role === 'a' ? audioA : audioB;
+            const audio = localRole === 'a' ? audioA : audioB;
             audio.stopCallingTone();
             audio.playConnectTone();
             
-            document.getElementById(`phone-${role}-btn-accept`).style.display = 'none';
-            document.getElementById(`phone-${role}-pulse-1`).style.display = 'none';
-            document.getElementById(`phone-${role}-pulse-2`).style.display = 'none';
+            document.getElementById(`phone-${localRole}-btn-accept`).style.display = 'none';
+            document.getElementById(`phone-${localRole}-pulse-1`).style.display = 'none';
+            document.getElementById(`phone-${localRole}-pulse-2`).style.display = 'none';
             
-            // Setup local WebRTC answers
-            await localPeerConnection.setRemoteDescription(new RTCSessionDescription(remoteData.sdp));
-            
-            // Pull ICE candidates
-            if (remoteData.candidates && remoteData.candidates.length > 0) {
-                for (const cand of remoteData.candidates) {
-                    await localPeerConnection.addIceCandidate(new RTCIceCandidate(cand)).catch(e => {});
-                }
-                await clearRemoteCandidates(peerRole);
-            }
-            
-            startCallTimer(role);
-            startVisualizer(role);
+            startCallTimer(localRole);
+            startVisualizer(localRole);
         } 
-        // If peer rejected or remains idle
-        else if (remoteData.status === 'idle') {
-            console.log("Chamada rejeitada ou encerrada pelo destino.");
-            hangupCall(role);
+        
+        else if (data.type === 'hangup') {
+            console.log("O par encerrou a chamada.");
+            hangupCall(localRole, false); // Hangup locally without sending another signal loop
+        } 
+        
+        else if (data.type === 'mute_toggle') {
+            // Flatten wave if peer is muted
+            const peerState = state[peerRole];
+            peerState.isMuted = data.isMuted;
         }
-    }
-    
-    // C. CONNECTED state: Handle active WebRTC candidate flow or hangup
-    else if (localPhoneState.status === 'connected') {
-        if (remoteData.status === 'idle') {
-            console.log("O par desligou a chamada.");
-            hangupCall(role);
-        } else {
-            // Check for new ICE candidates sent by remote peer
-            if (remoteData.candidates && remoteData.candidates.length > 0) {
-                for (const cand of remoteData.candidates) {
-                    await localPeerConnection.addIceCandidate(new RTCIceCandidate(cand)).catch(e => {});
-                }
-                await clearRemoteCandidates(peerRole);
-            }
-        }
-    }
-    
-    // D. INCOMING state: Check if peer hung up before we answered
-    else if (localPhoneState.status === 'incoming') {
-        if (remoteData.status === 'idle') {
-            console.log("O chamador cancelou a ligação.");
-            hangupCall(role);
-        }
-    }
+    });
+
+    dataConn.on('close', () => {
+        console.log("Canal de sinalização fechado.");
+        hangupCall(localRole, false);
+    });
 }
 
-// --- VoIP Initiation (Dialing) ---
+// --- Call Handlers ---
 
 async function startCallInitiation(caller) {
     const callerState = state[caller];
@@ -335,7 +287,7 @@ async function startCallInitiation(caller) {
 
     const receiverState = state[receiver];
     
-    // Handoff to local double loopback if in dual panel mode
+    // Local Loopback Simulation Mode
     if (currentViewMode === 'dual') {
         if (receiverState.status !== 'idle') {
             alert('Linha ocupada.');
@@ -344,13 +296,11 @@ async function startCallInitiation(caller) {
             return;
         }
 
-        // Set UI States locally
         callerState.status = 'outgoing';
         callerState.activePeer = receiver;
         receiverState.status = 'incoming';
         receiverState.activePeer = caller;
 
-        // Display screens
         document.getElementById(`phone-${caller}-call-screen`).classList.add('active');
         document.getElementById(`phone-${caller}-call-status`).textContent = 'Chamando...';
         document.getElementById(`phone-${caller}-call-name`).textContent = receiverState.displayName;
@@ -365,7 +315,6 @@ async function startCallInitiation(caller) {
         document.getElementById(`phone-${receiver}-pulse-1`).style.display = 'block';
         document.getElementById(`phone-${receiver}-pulse-2`).style.display = 'block';
 
-        // Play sounds
         const callerAudio = caller === 'a' ? audioA : audioB;
         callerAudio.startCallingTone();
         
@@ -374,12 +323,12 @@ async function startCallInitiation(caller) {
         document.getElementById(`phone-${receiver}`).classList.add('vibrate-active');
     } 
     
-    // Remote Server-signaled Mode (across networks/devices)
+    // Remote PeerJS Serverless Mode
     else {
         callerState.status = 'outgoing';
         callerState.activePeer = receiver;
         
-        // Show call screen
+        // Show local calling screen
         document.getElementById(`phone-${caller}-call-screen`).classList.add('active');
         document.getElementById(`phone-${caller}-call-status`).textContent = 'Chamando...';
         document.getElementById(`phone-${caller}-call-name`).textContent = receiver === 'a' ? 'Telefone A' : 'Telefone B';
@@ -389,38 +338,40 @@ async function startCallInitiation(caller) {
         const audio = caller === 'a' ? audioA : audioB;
         audio.startCallingTone();
 
-        // Create remote WebRTC Connection and SDP Offer
-        localPeerConnection = new RTCPeerConnection(iceConfiguration);
-        sentCandidatesCount = 0;
+        const destId = receiver === 'a' ? '5550101' : '5550102';
         
-        if (localStream) {
-            localStream.getTracks().forEach(track => localPeerConnection.addTrack(track, localStream));
-        }
-
-        localPeerConnection.onicecandidate = e => {
-            if (e.candidate) {
-                sendCandidateToCloud(caller, e.candidate);
-            }
-        };
-
-        const offer = await localPeerConnection.createOffer();
-        await localPeerConnection.setLocalDescription(offer);
-
-        callerState.sdp = offer;
+        console.log(`Conectando sinal ao destino: ${PEER_PREFIX}${destId}`);
         
-        // Write status and SDP to server file (state_a.json or state_b.json)
-        await sendStateToCloud(caller, callerState);
+        // Establish Signaling channel connection
+        dataConn = peerInstance.connect(`${PEER_PREFIX}${destId}`);
+        
+        dataConn.on('open', () => {
+            console.log("Canal de dados aberto. Enviando chamada...");
+            dataConn.send({ type: 'call_init' });
+            setupDataConnectionListeners(caller);
+        });
+
+        // Establish WebRTC Audio Stream connection
+        const mediaStream = localStream || getSilentAudioStream();
+        mediaConn = peerInstance.call(`${PEER_PREFIX}${destId}`, mediaStream);
+
+        mediaConn.on('stream', (remoteStream) => {
+            console.log("Mídia de áudio estabelecida com sucesso.");
+            // Play incoming stream on a virtual audio tag if needed
+            const audioEl = document.createElement('audio');
+            audioEl.srcObject = remoteStream;
+            audioEl.play().catch(e=>{});
+        });
     }
 }
 
-// --- Accept Call (Connected) ---
+// --- Accept Call ---
 
 async function acceptCall(phone) {
     const phoneState = state[phone];
     const peer = phoneState.activePeer;
     const peerState = state[peer];
 
-    // Stop ring signals
     audioA.stopRingtone();
     audioA.stopCallingTone();
     audioB.stopRingtone();
@@ -432,7 +383,7 @@ async function acceptCall(phone) {
     const audio = phone === 'a' ? audioA : audioB;
     audio.playConnectTone();
 
-    // Local Dual Panel connection logic
+    // Local Loopback Connect
     if (currentViewMode === 'dual') {
         phoneState.status = 'connected';
         peerState.status = 'connected';
@@ -444,39 +395,13 @@ async function acceptCall(phone) {
         document.getElementById('phone-b-pulse-1').style.display = 'none';
         document.getElementById('phone-b-pulse-2').style.display = 'none';
 
-        // Connect WebRTC locally
-        localPeerConnection = new RTCPeerConnection(iceConfiguration);
-        localPeerConnectionB = new RTCPeerConnection(iceConfiguration);
-
-        localPeerConnection.onicecandidate = e => {
-            if (e.candidate) localPeerConnectionB.addIceCandidate(e.candidate).catch(e=>{});
-        };
-        localPeerConnectionB.onicecandidate = e => {
-            if (e.candidate) localPeerConnection.addIceCandidate(e.candidate).catch(e=>{});
-        };
-
-        if (localStream) {
-            localStream.getTracks().forEach(track => {
-                localPeerConnection.addTrack(track, localStream);
-                localPeerConnectionB.addTrack(track, localStream);
-            });
-        }
-
-        const offer = await localPeerConnection.createOffer();
-        await localPeerConnection.setLocalDescription(offer);
-        await localPeerConnectionB.setRemoteDescription(offer);
-
-        const answer = await localPeerConnectionB.createAnswer();
-        await localPeerConnectionB.setLocalDescription(answer);
-        await localPeerConnection.setRemoteDescription(answer);
-
         startCallTimer('a');
         startCallTimer('b');
         startVisualizer('a');
         startVisualizer('b');
     } 
     
-    // Remote Mode WebRTC accept
+    // Remote PeerJS Connect
     else {
         phoneState.status = 'connected';
         
@@ -484,37 +409,22 @@ async function acceptCall(phone) {
         document.getElementById(`phone-${phone}-pulse-1`).style.display = 'none';
         document.getElementById(`phone-${phone}-pulse-2`).style.display = 'none';
 
-        // Fetch Caller's SDP Offer
-        const remoteData = await getRemoteState(peer);
-        
-        localPeerConnection = new RTCPeerConnection(iceConfiguration);
-        
-        if (localStream) {
-            localStream.getTracks().forEach(track => localPeerConnection.addTrack(track, localStream));
+        // Notify caller that we accepted the call
+        if (dataConn) {
+            dataConn.send({ type: 'call_accept' });
         }
 
-        localPeerConnection.onicecandidate = e => {
-            if (e.candidate) {
-                sendCandidateToCloud(phone, e.candidate);
-            }
-        };
-
-        await localPeerConnection.setRemoteDescription(new RTCSessionDescription(remoteData.sdp));
-        
-        const answer = await localPeerConnection.createAnswer();
-        await localPeerConnection.setLocalDescription(answer);
-
-        phoneState.sdp = answer;
-        
-        // Publish Answer to server
-        await sendStateToCloud(phone, phoneState);
-
-        // Fetch Caller candidates
-        if (remoteData.candidates && remoteData.candidates.length > 0) {
-            for (const cand of remoteData.candidates) {
-                await localPeerConnection.addIceCandidate(new RTCIceCandidate(cand)).catch(e => {});
-            }
-            await clearRemoteCandidates(peer);
+        // Answer WebRTC audio channel
+        if (mediaConn) {
+            const mediaStream = localStream || getSilentAudioStream();
+            mediaConn.answer(mediaStream);
+            
+            mediaConn.on('stream', (remoteStream) => {
+                console.log("Recebendo voz remota...");
+                const audioEl = document.createElement('audio');
+                audioEl.srcObject = remoteStream;
+                audioEl.play().catch(e=>{});
+            });
         }
 
         startCallTimer(phone);
@@ -524,11 +434,11 @@ async function acceptCall(phone) {
 
 // --- Hangup Call ---
 
-async function hangupCall(phone) {
+function hangupCall(phone, notifyPeer = true) {
     const phoneState = state[phone];
     const peer = phoneState.activePeer;
 
-    // Save history logs locally
+    // Write history record
     if (peer) {
         const peerState = state[peer];
         saveCallLog(phone, peer, phoneState.status);
@@ -537,7 +447,7 @@ async function hangupCall(phone) {
         }
     }
 
-    // Stop ringtones & calling signals
+    // Stop ringtones
     audioA.stopRingtone();
     audioA.stopCallingTone();
     audioB.stopRingtone();
@@ -549,25 +459,27 @@ async function hangupCall(phone) {
     document.getElementById(`phone-a`).classList.remove('vibrate-active');
     document.getElementById(`phone-b`).classList.remove('vibrate-active');
 
-    // Close WebRTC
-    if (localPeerConnection) {
-        localPeerConnection.close();
-        localPeerConnection = null;
+    // Notify peer of disconnect
+    if (currentViewMode !== 'dual' && notifyPeer && dataConn) {
+        try {
+            dataConn.send({ type: 'hangup' });
+        } catch(e) {}
     }
-    if (localPeerConnectionB) {
-        localPeerConnectionB.close();
-        localPeerConnectionB = null;
+
+    // Close PeerJS connections
+    if (dataConn) {
+        dataConn.close();
+        dataConn = null;
+    }
+    if (mediaConn) {
+        mediaConn.close();
+        mediaConn = null;
     }
 
     stopCallTimer('a');
     stopCallTimer('b');
     stopVisualizer('a');
     stopVisualizer('b');
-
-    // If Remote, reset server signaling state
-    if (currentViewMode !== 'dual') {
-        await resetSignaling(phone);
-    }
 
     // Reset UI states
     phoneState.status = 'idle';
@@ -593,7 +505,7 @@ function resetFeatureButtons(phone) {
     document.getElementById(`phone-${phone}-btn-speaker`).classList.remove('active');
 }
 
-// Toggle mute
+// Toggle Mute
 function toggleMute(phone) {
     const phoneState = state[phone];
     phoneState.isMuted = !phoneState.isMuted;
@@ -604,9 +516,14 @@ function toggleMute(phone) {
     } else {
         btn.classList.remove('active');
     }
+
+    // Notify peer to flatten visualizer wave
+    if (currentViewMode !== 'dual' && dataConn) {
+        dataConn.send({ type: 'mute_toggle', isMuted: phoneState.isMuted });
+    }
 }
 
-// Toggle speaker
+// Toggle Speaker
 function toggleSpeaker(phone) {
     const phoneState = state[phone];
     phoneState.isSpeaker = !phoneState.isSpeaker;
@@ -623,6 +540,7 @@ function toggleSpeaker(phone) {
 function startVisualizer(phone) {
     const canvas = document.getElementById(`phone-${phone}-visualizer`);
     const canvasCtx = canvas.getContext('2d');
+    if (!canvas) return;
     
     canvas.width = canvas.parentElement.clientWidth;
     canvas.height = canvas.parentElement.clientHeight;
@@ -679,12 +597,34 @@ function stopVisualizer(phone) {
     }
 }
 
+// Start call connection timer
+function startCallTimer(phone) {
+    const phoneState = state[phone];
+    phoneState.callStartTime = Date.now();
+    
+    const labelEl = document.getElementById(`phone-${phone}-call-status`);
+    if (!labelEl) return;
+    
+    phoneState.callTimerInterval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - phoneState.callStartTime) / 1000);
+        const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+        const secs = String(elapsed % 60).padStart(2, '0');
+        labelEl.textContent = `${mins}:${secs}`;
+    }, 1000);
+}
+
+function stopCallTimer(phone) {
+    const phoneState = state[phone];
+    if (phoneState.callTimerInterval) {
+        clearInterval(phoneState.callTimerInterval);
+        phoneState.callTimerInterval = null;
+    }
+}
+
 // --- Call logs (Recentes) Persistent storage ---
 
 function saveCallLog(phone, peer, callOutcome) {
     const logs = JSON.parse(localStorage.getItem(`calls_${phone}`)) || [];
-    
-    // Adjust logic to get name and number of the peer based on mode
     let peerName = '';
     let peerNumber = '';
     
