@@ -50,22 +50,36 @@ const toneFreqs = {
     '*': 350, '0': 440, '#': 480
 };
 
+// Auto initialize microphone and playout engine on first user click (bypasses browser autoplay/security blocks)
+async function initAudioOnFirstGesture() {
+    console.log("User gesture detected. Unlocking audio devices...");
+    // 1. Un-mute / play empty track to unlock remote speaker player
+    const audioPlayer = document.getElementById('remote-audio-player');
+    if (audioPlayer) {
+        audioPlayer.play().catch(e => {});
+    }
+
+    // 2. Request microphone permission
+    if (!localStream) {
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            console.log("Microphone stream pre-acquired successfully.");
+        } catch(e) {
+            console.warn("Microphone pre-acquisition rejected or blocked by browser context.");
+        }
+    }
+}
+document.addEventListener('click', initAudioOnFirstGesture, { once: true });
+document.addEventListener('touchstart', initAudioOnFirstGesture, { once: true });
+
 // Initialization
-window.addEventListener('DOMContentLoaded', async () => {
+window.addEventListener('DOMContentLoaded', () => {
     updateSystemTime();
     setInterval(updateSystemTime, 30000);
     
     // Load initial logs
     renderLogs('a');
     renderLogs('b');
-    
-    // Request microphone permission on startup to prepare stream
-    try {
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        console.log("Microphone stream acquired.");
-    } catch (e) {
-        console.warn("Microphone access not granted or blocked by browser context. Using synthesizer backup.");
-    }
     
     // Default mode is dual panel local simulation
     changeViewMode('dual');
